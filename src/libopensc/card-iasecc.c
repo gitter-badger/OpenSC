@@ -88,15 +88,21 @@ static const struct sc_atr_table iasecc_known_atrs[] = {
 		"IAS/ECC v1.0.1 Amos", SC_CARD_TYPE_IASECC_AMOS, 0, NULL },
 	{ "3B:DC:18:FF:81:91:FE:1F:C3:80:73:C8:21:13:66:01:0B:03:52:00:05:38", NULL,
 		"IAS/ECC v1.0.1 Amos", SC_CARD_TYPE_IASECC_AMOS, 0, NULL },
+	{ "3B:7F:96:00:00:80:31:B8:65:B0:85:03:00:EF:12:00:F6:82:90:00", NULL,
+		"IAS/ECC v1.0.1 FINeID", SC_CARD_TYPE_IASECC_FINEID, 0, NULL },
 	{ NULL, NULL, NULL, 0, 0, NULL }
 };
 
 static struct sc_aid OberthurIASECC_AID = {
-	{0xA0,0x00,0x00,0x00,0x77,0x01,0x08,0x00,0x07,0x00,0x00,0xFE,0x00,0x00,0x01,0x00}, 16
+	{0xA0, 0x00, 0x00, 0x00, 0x77, 0x01, 0x08, 0x00, 0x07, 0x00, 0x00, 0xFE, 0x00, 0x00, 0x01, 0x00}, 16
 };
 
 static struct sc_aid MIIASECC_AID = {
-	{ 0x4D, 0x49, 0x4F, 0x4D, 0x43, 0x54}, 6
+	{0x4D, 0x49, 0x4F, 0x4D, 0x43, 0x54}, 6
+};
+
+static struct sc_aid FINEIDIASECC_AID = {
+	{0xA0, 0x00, 0x00, 0x00, 0x63, 0x50, 0x4B, 0x43, 0x53, 0x2D, 0x31, 0x35}, 12
 };
 
 struct iasecc_pin_status  {
@@ -534,6 +540,32 @@ iasecc_mi_match(struct sc_card *card)
 
 
 static int
+iasecc_fineid_match(struct sc_card *card)
+{
+	struct sc_context *ctx = card->ctx;
+	unsigned char resp[0x100];
+	size_t resp_len;
+	int rv = 0;
+
+	LOG_FUNC_CALLED(ctx);
+
+	resp_len = sizeof(resp);
+	rv = iasecc_select_aid(card, &FINEIDIASECC_AID, resp, &resp_len);
+	LOG_TEST_RET(ctx, rv, "IASECC: failed to select FINeID IAS/ECC applet");
+
+	if (!card->ef_atr)
+		card->ef_atr = calloc(1, sizeof(struct sc_ef_atr));
+	if (!card->ef_atr)
+		LOG_FUNC_RETURN(ctx, SC_ERROR_OUT_OF_MEMORY);
+
+	memcpy(card->ef_atr->aid.value, FINEIDIASECC_AID.value, FINEIDIASECC_AID.len);
+	card->ef_atr->aid.len = FINEIDIASECC_AID.len;
+
+	LOG_FUNC_RETURN(ctx, SC_SUCCESS);
+}
+
+
+static int
 iasecc_init_amos_or_sagem(struct sc_card *card)
 {
 	struct sc_context *ctx = card->ctx;
@@ -573,6 +605,34 @@ iasecc_init_amos_or_sagem(struct sc_card *card)
 
 
 static int
+iasecc_init_fineid(struct sc_card *card)
+{
+	struct sc_context *ctx = card->ctx;
+	unsigned int flags;
+	int rv = 0;
+
+	LOG_FUNC_CALLED(ctx);
+
+	flags = IASECC_CARD_DEFAULT_FLAGS;
+
+	_sc_card_add_rsa_alg(card, 1024, flags, 0x10001);
+	_sc_card_add_rsa_alg(card, 2048, flags, 0x10001);
+
+	card->caps = SC_CARD_CAP_RNG;
+	card->caps |= SC_CARD_CAP_APDU_EXT;
+	card->caps |= SC_CARD_CAP_USE_FCI_AC;
+
+	rv = iasecc_fineid_match(card);
+	LOG_TEST_RET(ctx, rv, "unknown FINeID IAS/ECC card");
+
+	rv = iasecc_parse_ef_atr(card);
+	LOG_TEST_RET(ctx, rv, "IASECC: ATR parse failed");
+
+	LOG_FUNC_RETURN(ctx, SC_SUCCESS);
+}
+
+
+static int
 iasecc_init(struct sc_card *card)
 {
 	struct sc_context *ctx = card->ctx;
@@ -597,6 +657,8 @@ iasecc_init(struct sc_card *card)
 		rv = iasecc_init_amos_or_sagem(card);
 	else if (card->type == SC_CARD_TYPE_IASECC_MI)
 		rv = iasecc_init_amos_or_sagem(card);
+	else if (card->type == SC_CARD_TYPE_IASECC_FINEID)
+		rv = iasecc_init_fineid(card);
 	else
 		LOG_FUNC_RETURN(ctx, SC_ERROR_INVALID_CARD);
 
@@ -901,7 +963,8 @@ iasecc_select_file(struct sc_card *card, const struct sc_path *path,
 				&& card->type != SC_CARD_TYPE_IASECC_SAGEM
 				&& card->type != SC_CARD_TYPE_IASECC_AMOS
 				&& card->type != SC_CARD_TYPE_IASECC_MI
-				&& card->type != SC_CARD_TYPE_IASECC_MI2)
+				&& card->type != SC_CARD_TYPE_IASECC_MI2
+				&& card->type != SC_CARD_TYPE_IASECC_FINEID)
 			LOG_TEST_RET(ctx, SC_ERROR_NOT_SUPPORTED, "Unsupported card");
 
 		if (lpath.type == SC_PATH_TYPE_FILE_ID)   {
@@ -927,6 +990,11 @@ iasecc_select_file(struct sc_card *card, const struct sc_path *path,
 				apdu.p2 = 0x04;
 			if (card->type == SC_CARD_TYPE_IASECC_MI2)
 				apdu.p2 = 0x04;
+			if (card->type == SC_CARD_TYPE_IASECC_FINEID)  {
+				// p1 of 0x09 not supported
+				apdu.p1 = 0x02;
+				apdu.p2 = 0x04;
+			}
 		}
 		else if (lpath.type == SC_PATH_TYPE_PARENT)   {
 			apdu.p1 = 0x03;
