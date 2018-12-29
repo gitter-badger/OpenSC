@@ -11,4 +11,4 @@ Build and test status of specific cards:
 | Cards                 | Status |
 |-----------------------|--------|
 | CAC                   | [![CAC](https://gitlab.com/redhat-crypto/OpenSC/badges/cac/build.svg)](https://gitlab.com/redhat-crypto/OpenSC/pipelines) |
-| Coolkey               | [![Coolkey](https://gitlab.com/redhat-crypto/OpenSC/badges/coolkey/build.svg)](https://gitlab.com/redhat-crypto/OpenSC/pipelines) |
+| Coolkey               | [![Coolkey](https://gitlab.com/redhat-crypto/OpenSC/badges/coolkey/build.svg)](https://gitlab.com/redhat-crypto/OpenSC/pipelines) [![Join the chat at https://gitter.im/enyone/OpenSC](https://badges.gitter.im/enyone/OpenSC.svg)](https://gitter.im/enyone/OpenSC?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge) |
